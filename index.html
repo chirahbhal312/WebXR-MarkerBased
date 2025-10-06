@@ -2,13 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Simple AR Scene (Three.js)</title>
+  <title>WebXR Image Tracking - Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { margin: 0; overflow: hidden; }
-    canvas { display: block; touch-action: none; }
+    body { margin: 0; overflow: hidden; background: #000; }
+    #start-ar {
+      position: absolute;
+      top: 10px; left: 10px;
+      padding: 10px 20px;
+      background: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
+  <button id="start-ar">Start AR</button>
+
   <script type="importmap">
     {
       "imports": {
@@ -22,12 +35,16 @@
     import * as THREE from 'three';
     import { ARButton } from 'three/addons/webxr/ARButton.js';
 
-    let scene, camera, renderer;
+    let scene, camera, renderer, cube;
+    let xrRefSpace = null;
+    let trackedImages = new Map();
+
+    // Marker image setup (change this to your marker)
+    const imageURL = 'https://threejs.org/examples/textures/758px-Canestra_di_frutta_(Caravaggio).jpg';
 
     init();
 
-    function init() {
-      // Basic scene setup
+    async function init() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
@@ -36,22 +53,71 @@
       renderer.xr.enabled = true;
       document.body.appendChild(renderer.domElement);
 
-      // AR Button
-      document.body.appendChild(ARButton.createButton(renderer));
-
-      // Add a simple cube to visualize AR
+      // Cube to appear on image
       const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
       const material = new THREE.MeshNormalMaterial();
-      const cube = new THREE.Mesh(geometry, material);
-      cube.position.set(0, 0, -0.5);
+      cube = new THREE.Mesh(geometry, material);
+      cube.visible = false; // initially hidden
       scene.add(cube);
 
-      // Render loop
-      renderer.setAnimationLoop(() => {
-        cube.rotation.x += 0.01;
-        cube.rotation.y += 0.01;
-        renderer.render(scene, camera);
+      document.getElementById('start-ar').addEventListener('click', activateAR);
+    }
+
+    async function activateAR() {
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['image-tracking', 'dom-overlay'],
+        domOverlay: { root: document.body },
+        trackedImages: [
+          {
+            image: await fetchImageBitmap(imageURL),
+            widthInMeters: 0.2 // real-world size of marker
+          }
+        ]
       });
+
+      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, renderer.getContext()) });
+      renderer.xr.setSession(session);
+
+      xrRefSpace = await session.requestReferenceSpace('local');
+
+      session.addEventListener('select', () => console.log('Interaction detected'));
+
+      renderer.setAnimationLoop((time, frame) => renderXR(frame));
+    }
+
+    function renderXR(frame) {
+      const session = frame.session;
+      const results = frame.getImageTrackingResults();
+
+      for (const result of results) {
+        const imageIndex = result.index;
+        const state = result.trackingState;
+
+        if (!trackedImages.has(imageIndex)) {
+          trackedImages.set(imageIndex, new THREE.Group());
+        }
+
+        const refSpace = xrRefSpace;
+        const pose = frame.getPose(result.imageSpace, refSpace);
+
+        if (state === 'tracked' && pose) {
+          cube.visible = true;
+          cube.matrix.fromArray(pose.transform.matrix);
+          cube.matrix.decompose(cube.position, cube.quaternion, cube.scale);
+          cube.rotation.x += 0.01;
+          cube.rotation.y += 0.01;
+        } else {
+          cube.visible = false;
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    async function fetchImageBitmap(url) {
+      const img = await fetch(url);
+      const blob = await img.blob();
+      return await createImageBitmap(blob);
     }
   </script>
 </body>
