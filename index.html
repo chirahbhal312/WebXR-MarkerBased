@@ -1,115 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WebXR Marker Tracking (Three.js + WebXR)</title>
+  <meta charset="UTF-8">
+  <title>Simple AR Scene (Three.js)</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; }
-    #enter-ar { position: absolute; top: 10px; left: 10px; z-index: 10; }
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
   </style>
 </head>
 <body>
-  <!-- ✅ Your requested import map -->
   <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
+      }
     }
-  }
   </script>
 
   <script type="module">
-  import * as THREE from 'three';
-  import { ARButton } from 'three/addons/webxr/ARButton.js';
+    import * as THREE from 'three';
+    import { ARButton } from 'three/addons/webxr/ARButton.js';
 
-  let scene, camera, renderer, trackedMesh, referenceSpace;
+    let scene, camera, renderer;
 
-  init();
+    init();
 
-  async function init() {
-    // Scene + Camera
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+    function init() {
+      // Basic scene setup
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-    // Renderer
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = true;
-    document.body.appendChild(renderer.domElement);
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
 
-    // ✅ Load the marker image
-    const img = new Image();
-    img.src = 'image.png'; // Replace with your marker image path or HTTPS URL
-    await img.decode();
-    const bitmap = await createImageBitmap(img);
+      // AR Button
+      document.body.appendChild(ARButton.createButton(renderer));
 
-    // ✅ Create AR button with image tracking
-    const arButton = ARButton.createButton(renderer, {
-      requiredFeatures: ['image-tracking'],
-      trackedImages: [
-        {
-          image: bitmap,
-          widthInMeters: 0.2 // Physical width of the printed marker
-        }
-      ]
-    });
-    document.body.appendChild(arButton);
+      // Add a simple cube to visualize AR
+      const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+      const material = new THREE.MeshNormalMaterial();
+      const cube = new THREE.Mesh(geometry, material);
+      cube.position.set(0, 0, -0.5);
+      scene.add(cube);
 
-    // ✅ Create object to attach to marker
-    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-    const material = new THREE.MeshNormalMaterial();
-    trackedMesh = new THREE.Mesh(geometry, material);
-    trackedMesh.visible = false; // Hidden until tracked
-    scene.add(trackedMesh);
-
-    // Lighting (optional)
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
-
-    // Handle session start
-    renderer.xr.addEventListener('sessionstart', () => {
-      referenceSpace = renderer.xr.getReferenceSpace();
-    });
-
-    // Render loop
-    renderer.setAnimationLoop(onXRFrame);
-
-    window.addEventListener('resize', onWindowResize);
-  }
-
-  function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
-
-  function onXRFrame(time, frame) {
-    const session = renderer.xr.getSession();
-    if (!referenceSpace) {
-      renderer.render(scene, camera);
-      return;
+      // Render loop
+      renderer.setAnimationLoop(() => {
+        cube.rotation.x += 0.01;
+        cube.rotation.y += 0.01;
+        renderer.render(scene, camera);
+      });
     }
-
-    const results = frame.getImageTrackingResults();
-    for (const result of results) {
-      const state = result.trackingState;
-      const pose = frame.getPose(result.imageSpace, referenceSpace);
-      if (!pose) continue;
-
-      if (state === 'tracked') {
-        trackedMesh.visible = true;
-
-        // Set position/orientation from image pose
-        const m = new THREE.Matrix4().fromArray(pose.transform.matrix);
-        m.decompose(trackedMesh.position, trackedMesh.quaternion, trackedMesh.scale);
-      } else {
-        trackedMesh.visible = false;
-      }
-    }
-
-    renderer.render(scene, camera);
-  }
   </script>
 </body>
 </html>
